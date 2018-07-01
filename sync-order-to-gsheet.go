@@ -20,10 +20,17 @@ type billingAddress struct {
 	Telephone string `json:"telephone"`
 }
 type shippingAddress struct {
-	Company string `json:"company"`
+	City      string   `json:"city"`
+	Company   string   `json:"company"`
+	Country   string   `json:"country"`
+	Email     string   `json:"email"`
+	Region    string   `json:"region"`
+	Street    []string `json:"street"`
+	Telephone string   `json:"telephone"`
 }
 type shipping struct {
 	ShippingAddress shippingAddress `json:"address"`
+	Method          string          `json:"method"`
 }
 type shippingAssignment struct {
 	Shipping shipping `json:"shipping"`
@@ -66,7 +73,7 @@ type responseOrder struct {
 func getListOrder() responseOrder {
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		log.Fatal("Error loading .env.bak file")
 	}
 	MagentoBearer := os.Getenv("MAGENTO_BEARER_TOKEN")
 	MagentoBaseRestApi := os.Getenv("MAGENTO_BASE_REST_API")
@@ -76,6 +83,7 @@ func getListOrder() responseOrder {
 	currentMonth := time.Now().Format("2006-01")
 
 	condition := "searchCriteria[filter_groups][0][filters][0][field]=created_at&searchCriteria[filter_groups][0][filters][0][value]=" + currentMonth + "-01%2000:00:00&searchCriteria[filter_groups][0][filters][0][condition_type]=from&searchCriteria[filter_groups][1][filters][1][field]=created_at&searchCriteria[filter_groups][1][filters][1][value]=" + currentMonth + "-31%2023:59:59&searchCriteria[filter_groups][1][filters][1][condition_type]=to"
+	//fmt.Printf(MagentoBaseRestApi + "V1/orders?" + condition)
 	request, _ := http.NewRequest("GET", MagentoBaseRestApi+"V1/orders?"+condition, nil)
 	request.Header.Set("Authorization", "Bearer "+MagentoBearer)
 	client := &http.Client{}
@@ -93,7 +101,7 @@ func main() {
 
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		log.Fatal("Error loading .env.bak file")
 	}
 	spreadsheetId := os.Getenv("GOOGLE_SHEET_ID")
 
@@ -118,7 +126,8 @@ func main() {
 		"SKU",
 		"Quantity",
 		"Item Price",
-		"Store",
+		"Shipping Method",
+		"Address",
 		"Discount code",
 		"Order Value",
 		"Paid Amount",
@@ -143,10 +152,19 @@ func main() {
 					quantities = append(quantities, strconv.Itoa(item.OrderItems[j].QuantityOrdered))
 				}
 			}
-			company := ""
+			address := ""
+			shippingMethod := ""
 			if len(item.ExtensionAttributes.ShippingAssignments) > 0 {
 				shipping := item.ExtensionAttributes.ShippingAssignments[0].Shipping
-				company = shipping.ShippingAddress.Company
+
+				if shipping.Method=="smilestoredelivery_smilestoredelivery" {
+					shippingMethod ="Nhận Tại Cửa Hàng"
+					address = shipping.ShippingAddress.Company
+				}else{
+					shippingMethod ="Giao Hàng Tận Nơi"
+					address =  strings.Join(shipping.ShippingAddress.Street,", ")
+					address += ", "+shipping.ShippingAddress.City+ ", "+ shipping.ShippingAddress.Region+ " (Phone: "+ shipping.ShippingAddress.Telephone+")"
+				}
 			}
 			row := []interface{}{
 				item.CreatedAt,
@@ -159,7 +177,8 @@ func main() {
 				strings.Join(skus, ","),
 				strings.Join(quantities, ","),
 				strings.Join(prices, ","),
-				company,
+				shippingMethod,
+				address,
 				item.DiscountCode,
 				item.GrandTotal,
 				item.TotalPaid,
