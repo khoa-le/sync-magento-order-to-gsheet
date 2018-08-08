@@ -35,8 +35,14 @@ type shipping struct {
 type shippingAssignment struct {
 	Shipping shipping `json:"shipping"`
 }
+type giftMessage struct{
+	Sender string `json:"sender"`
+	Recipient string `json:"recipient"`
+	Message string `json:"message"`
+}
 type extensionAttributes struct {
 	ShippingAssignments []shippingAssignment `json:"shipping_assignments"`
+	GiftMessage *giftMessage `json:"gift_message"`
 }
 type payment struct {
 	Method        string `json:"method"`
@@ -70,7 +76,7 @@ type responseOrder struct {
 	Items []order `json:"items"`
 }
 
-func getListOrder() responseOrder {
+func getListOrder(currentMonth string) responseOrder {
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env.bak file")
@@ -80,7 +86,7 @@ func getListOrder() responseOrder {
 
 	res := responseOrder{}
 
-	currentMonth := time.Now().Format("2006-01")
+	//currentMonth := time.Now().Format("2006-01")
 
 	condition := "searchCriteria[filter_groups][0][filters][0][field]=created_at&searchCriteria[filter_groups][0][filters][0][value]=" + currentMonth + "-01%2000:00:00&searchCriteria[filter_groups][0][filters][0][condition_type]=from&searchCriteria[filter_groups][1][filters][1][field]=created_at&searchCriteria[filter_groups][1][filters][1][value]=" + currentMonth + "-31%2023:59:59&searchCriteria[filter_groups][1][filters][1][condition_type]=to"
 	//fmt.Printf(MagentoBaseRestApi + "V1/orders?" + condition)
@@ -110,6 +116,8 @@ func main() {
 		log.Fatalf("Unable to retrieve Sheets client: %v", err)
 	}
 	currentMonth := time.Now().Format("2006-01")
+	currentMonth = "2018-07"
+
 	existedSheet := spreadsheet.CheckExistSheet(spreadsheetId, currentMonth)
 	if !existedSheet {
 		_ = spreadsheet.CreateNewSheet(spreadsheetId, currentMonth)
@@ -134,9 +142,10 @@ func main() {
 		"Due Amount",
 		"Payment Transaction ID",
 		"Payment method",
+		"Gift Message",
 	})
 
-	res := getListOrder()
+	res := getListOrder(currentMonth)
 	if res.Total > 0 {
 		for i := 0; i < res.Total; i++ {
 			//fmt.Printf(res.Items[i].CustomerFirstName);
@@ -166,6 +175,14 @@ func main() {
 					address += ", "+shipping.ShippingAddress.City+ ", "+ shipping.ShippingAddress.Region+ " (Phone: "+ shipping.ShippingAddress.Telephone+")"
 				}
 			}
+
+			giftInfo := ""
+			if item.ExtensionAttributes.GiftMessage !=nil {
+				giftMessage := item.ExtensionAttributes.GiftMessage
+				giftInfo += "From: "+giftMessage.Sender +"\n"
+				giftInfo += "To: "+giftMessage.Recipient +"\n"
+				giftInfo += "Message: "+giftMessage.Message +"\n"
+			}
 			row := []interface{}{
 				item.CreatedAt,
 				item.IncrementId,
@@ -185,6 +202,7 @@ func main() {
 				item.TotalDue,
 				item.Payment.TransactionId,
 				item.Payment.Method,
+				giftInfo,
 			}
 			vr.Values = append(vr.Values, row)
 		}
