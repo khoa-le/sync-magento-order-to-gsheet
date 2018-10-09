@@ -17,7 +17,12 @@ import (
 )
 
 type billingAddress struct {
-	Telephone string `json:"telephone"`
+	FirstName string   `json:"firstname"`
+	LastName  string   `json:"lastname"`
+	City      string   `json:"city"`
+	Region    string   `json:"region"`
+	Street    []string `json:"street"`
+	Telephone string   `json"telephone"`
 }
 type shippingAddress struct {
 	City      string   `json:"city"`
@@ -35,14 +40,14 @@ type shipping struct {
 type shippingAssignment struct {
 	Shipping shipping `json:"shipping"`
 }
-type giftMessage struct{
-	Sender string `json:"sender"`
+type giftMessage struct {
+	Sender    string `json:"sender"`
 	Recipient string `json:"recipient"`
-	Message string `json:"message"`
+	Message   string `json:"message"`
 }
 type extensionAttributes struct {
 	ShippingAssignments []shippingAssignment `json:"shipping_assignments"`
-	GiftMessage *giftMessage `json:"gift_message"`
+	GiftMessage         *giftMessage         `json:"gift_message"`
 }
 type payment struct {
 	Method        string `json:"method"`
@@ -65,11 +70,11 @@ type order struct {
 	CustomerFirstName   string              `json:"customer_firstname"`
 	CustomerLastName    string              `json:"customer_lastname"`
 	CustomerEmail       string              `json:"customer_email"`
-	Address             billingAddress      `json:"billing_address"`
 	DiscountCode        string              `json:"coupon_code"`
 	OrderItems          []orderItem         `json:"items"`
 	Payment             payment             `json:"payment"`
 	ExtensionAttributes extensionAttributes `json:"extension_attributes"`
+	BillingAddress      billingAddress      `json:"billing_address"`
 }
 type responseOrder struct {
 	Total int     `json:"total_count"`
@@ -116,7 +121,7 @@ func main() {
 		log.Fatalf("Unable to retrieve Sheets client: %v", err)
 	}
 	currentMonth := time.Now().Format("2006-01")
-	currentMonth = "2018-07"
+	//currentMonth = "2018-05"
 
 	existedSheet := spreadsheet.CheckExistSheet(spreadsheetId, currentMonth)
 	if !existedSheet {
@@ -134,8 +139,9 @@ func main() {
 		"SKU",
 		"Quantity",
 		"Item Price",
+		"Billing Address",
 		"Shipping Method",
-		"Address",
+		"Shipping Address",
 		"Discount code",
 		"Order Value",
 		"Paid Amount",
@@ -166,22 +172,26 @@ func main() {
 			if len(item.ExtensionAttributes.ShippingAssignments) > 0 {
 				shipping := item.ExtensionAttributes.ShippingAssignments[0].Shipping
 
-				if shipping.Method=="smilestoredelivery_smilestoredelivery" {
-					shippingMethod ="Nhận Tại Cửa Hàng"
+				if shipping.Method == "smilestoredelivery_smilestoredelivery" {
+					shippingMethod = "Nhận Tại Cửa Hàng"
 					address = shipping.ShippingAddress.Company
-				}else{
-					shippingMethod ="Giao Hàng Tận Nơi"
-					address =  strings.Join(shipping.ShippingAddress.Street,", ")
-					address += ", "+shipping.ShippingAddress.City+ ", "+ shipping.ShippingAddress.Region+ " (Phone: "+ shipping.ShippingAddress.Telephone+")"
+				} else {
+					shippingMethod = "Giao Hàng Tận Nơi"
+					address = strings.Join(shipping.ShippingAddress.Street, ", ")
+					address += ", " + shipping.ShippingAddress.City + ", " + shipping.ShippingAddress.Region + " (Phone: " + shipping.ShippingAddress.Telephone + ")"
 				}
 			}
 
+			billingAddress :=  "First Name: " + item.BillingAddress.FirstName + ", Last Name: " + item.BillingAddress.LastName + ", Phone: " + item.BillingAddress.Telephone + " \n"
+			billingAddress += "Address: "+strings.Join(item.BillingAddress.Street, ", ")
+			billingAddress += ", " + item.BillingAddress.City + ", " + item.BillingAddress.Region
+
 			giftInfo := ""
-			if item.ExtensionAttributes.GiftMessage !=nil {
+			if item.ExtensionAttributes.GiftMessage != nil {
 				giftMessage := item.ExtensionAttributes.GiftMessage
-				giftInfo += "From: "+giftMessage.Sender +"\n"
-				giftInfo += "To: "+giftMessage.Recipient +"\n"
-				giftInfo += "Message: "+giftMessage.Message +"\n"
+				giftInfo += "From: " + giftMessage.Sender + "\n"
+				giftInfo += "To: " + giftMessage.Recipient + "\n"
+				giftInfo += "Message: " + giftMessage.Message + "\n"
 			}
 			row := []interface{}{
 				item.CreatedAt,
@@ -190,10 +200,11 @@ func main() {
 				item.CustomerFirstName,
 				item.CustomerLastName,
 				item.CustomerEmail,
-				item.Address.Telephone,
+				item.BillingAddress.Telephone,
 				strings.Join(skus, ","),
 				strings.Join(quantities, ","),
 				strings.Join(prices, ","),
+				billingAddress,
 				shippingMethod,
 				address,
 				item.DiscountCode,
