@@ -81,6 +81,16 @@ type responseOrder struct {
 	Total int     `json:"total_count"`
 	Items []order `json:"items"`
 }
+type customAttribute struct {
+	AttributeCode string `json:"attribute_code"`
+	Value         string `json:"value"`
+}
+type product struct {
+	ID               int               `json:"id"`
+	Sku              string            `json:"sku"`
+	CustomAttributes []customAttribute `json:"custom_attributes"`
+	BtjCode          string
+}
 
 func getListOrder(currentMonth string) responseOrder {
 	err := godotenv.Load()
@@ -106,6 +116,39 @@ func getListOrder(currentMonth string) responseOrder {
 		data, _ := ioutil.ReadAll(response.Body)
 		json.Unmarshal([]byte(data), &res)
 	}
+	return res
+}
+
+func getProduct(sku string) product {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env.bak file")
+	}
+	MagentoBearer := os.Getenv("MAGENTO_BEARER_TOKEN")
+	MagentoBaseRestApi := os.Getenv("MAGENTO_BASE_REST_API")
+
+	res := product{}
+
+	request, _ := http.NewRequest("GET", MagentoBaseRestApi+"V1/products/"+sku, nil)
+	request.Header.Set("Authorization", "Bearer "+MagentoBearer)
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		fmt.Printf("The http request failed")
+	} else {
+		data, _ := ioutil.ReadAll(response.Body)
+
+		json.Unmarshal([]byte(data), &res)
+	}
+
+	for i := 0; i < len(res.CustomAttributes); i++ {
+		attr := res.CustomAttributes[i]
+		if attr.AttributeCode == "btj_code" {
+			res.BtjCode=attr.Value
+			break
+		}
+	}
+
 	return res
 }
 
@@ -163,7 +206,13 @@ func main() {
 
 			for j := 0; j < len(item.OrderItems); j++ {
 				if item.OrderItems[j].Price > 0 || (item.OrderItems[j].Price == 0 && item.OrderItems[j].ParentItemId == 0) {
-					skus = append(skus, item.OrderItems[j].SKU)
+					productSaleOrderItem := getProduct(item.OrderItems[j].SKU)
+					if productSaleOrderItem.ID > 0 {
+						skus = append(skus, item.OrderItems[j].SKU+"("+productSaleOrderItem.BtjCode+")")
+					} else {
+						skus = append(skus, item.OrderItems[j].SKU)
+					}
+
 					prices = append(prices, strconv.Itoa(item.OrderItems[j].Price))
 					quantities = append(quantities, strconv.Itoa(item.OrderItems[j].QuantityOrdered))
 				}
