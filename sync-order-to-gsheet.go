@@ -9,11 +9,11 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"go-sheet/spreadsheet"
+	"time"
 
 	"github.com/joho/godotenv"
+	"github.com/khoa-le/sync-magento-order-to-gsheet/spreadsheet"
 	"google.golang.org/api/sheets/v4"
-	"time"
 )
 
 type billingAddress struct {
@@ -22,7 +22,7 @@ type billingAddress struct {
 	City      string   `json:"city"`
 	Region    string   `json:"region"`
 	Street    []string `json:"street"`
-	Telephone string   `json"telephone"`
+	Telephone string   `json:"telephone"`
 }
 type shippingAddress struct {
 	City      string   `json:"city"`
@@ -54,7 +54,7 @@ type payment struct {
 	TransactionId string `json:"last_trans_id"`
 }
 type orderItem struct {
-	SKU             string `json:"sku"'`
+	SKU             string `json:"sku"`
 	Price           int    `json:"price"`
 	QuantityOrdered int    `json:"qty_ordered"`
 	ProductType     string `json:"product_type"`
@@ -144,7 +144,7 @@ func getProduct(sku string) product {
 	for i := 0; i < len(res.CustomAttributes); i++ {
 		attr := res.CustomAttributes[i]
 		if attr.AttributeCode == "btj_code" {
-			res.BtjCode=attr.Value
+			res.BtjCode = attr.Value
 			break
 		}
 	}
@@ -165,7 +165,7 @@ func main() {
 		log.Fatalf("Unable to retrieve Sheets client: %v", err)
 	}
 	currentMonth := time.Now().Format("2006-01")
-	//currentMonth = "2018-05"
+	//	currentMonth = "2019-02"
 
 	existedSheet := spreadsheet.CheckExistSheet(spreadsheetId, currentMonth)
 	if !existedSheet {
@@ -198,24 +198,23 @@ func main() {
 	res := getListOrder(currentMonth)
 	if res.Total > 0 {
 		for i := 0; i < res.Total; i++ {
-			//fmt.Printf(res.Items[i].CustomerFirstName);
 			item := res.Items[i]
 			skus := make([]string, 0)
 			prices := make([]string, 0)
 			quantities := make([]string, 0)
 
 			for j := 0; j < len(item.OrderItems); j++ {
-				if item.OrderItems[j].Price > 0 || (item.OrderItems[j].Price == 0 && item.OrderItems[j].ParentItemId == 0) {
-					productSaleOrderItem := getProduct(item.OrderItems[j].SKU)
-					if productSaleOrderItem.ID > 0 {
-						skus = append(skus, item.OrderItems[j].SKU+"("+productSaleOrderItem.BtjCode+")")
-					} else {
-						skus = append(skus, item.OrderItems[j].SKU)
-					}
+				//if (item.OrderItems[j].Price >0  && item.OrderItems[j].ProductType == "configurable"){
+					//productSaleOrderItem := getProduct(item.OrderItems[j].SKU)
+					// if productSaleOrderItem.ID > 0 {
+					// 	skus = append(skus, item.OrderItems[j].SKU+"("+productSaleOrderItem.BtjCode+")")
+					// } else {
+					skus = append(skus, item.OrderItems[j].SKU)
+					// }
 
 					prices = append(prices, strconv.Itoa(item.OrderItems[j].Price))
 					quantities = append(quantities, strconv.Itoa(item.OrderItems[j].QuantityOrdered))
-				}
+				//}
 			}
 			address := ""
 			shippingMethod := ""
