@@ -204,7 +204,7 @@ func main() {
 			quantities := make([]string, 0)
 
 			for j := 0; j < len(item.OrderItems); j++ {
-				//if (item.OrderItems[j].Price >0  && item.OrderItems[j].ProductType == "configurable"){
+				if item.OrderItems[j].ParentItemId > 0 || (item.OrderItems[j].ParentItemId == 0 && item.OrderItems[j].ProductType == "simple") {
 					//productSaleOrderItem := getProduct(item.OrderItems[j].SKU)
 					// if productSaleOrderItem.ID > 0 {
 					// 	skus = append(skus, item.OrderItems[j].SKU+"("+productSaleOrderItem.BtjCode+")")
@@ -214,7 +214,7 @@ func main() {
 
 					prices = append(prices, strconv.Itoa(item.OrderItems[j].Price))
 					quantities = append(quantities, strconv.Itoa(item.OrderItems[j].QuantityOrdered))
-				//}
+				}
 			}
 			address := ""
 			shippingMethod := ""
