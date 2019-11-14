@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -48,6 +51,8 @@ type giftMessage struct {
 type extensionAttributes struct {
 	ShippingAssignments []shippingAssignment `json:"shipping_assignments"`
 	GiftMessage         *giftMessage         `json:"gift_message"`
+	FulfillmentStatus   string               `json:"fulfillment_status"`
+	StockChecking       string               `json:"stock_checking"`
 }
 type payment struct {
 	Method        string `json:"method"`
@@ -91,6 +96,54 @@ type product struct {
 	CustomAttributes []customAttribute `json:"custom_attributes"`
 	BtjCode          string
 }
+type StoreNoteRequest struct {
+	StoreNote StoreNote `json:"storeNote"`
+}
+
+type StoreNote struct {
+	SalesOrderId          int    `json:"sales_order_id"`
+	SalesOrderIncrementId string `json:"sales_order_increment_id"`
+	Note                  string `json:"note"`
+	Status                string `json:"status"`
+	ErplyInvoiceIds       string `json:"erply_invoice_ids"`
+}
+
+func updateStoreNote(orderId string, note string, status string, erplyInvoiceIds string) StoreNote {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env.bak file")
+	}
+	MagentoBearer := os.Getenv("MAGENTO_BEARER_TOKEN")
+	MagentoBaseRestApi := os.Getenv("MAGENTO_BASE_REST_API")
+
+	storeNoteRequest := &StoreNoteRequest{
+		StoreNote: StoreNote{
+			Note:            note,
+			Status:          status,
+			ErplyInvoiceIds: erplyInvoiceIds,
+		},
+	}
+
+	// marshal storeNote to json
+	storeNoteRequestJson, err := json.Marshal(storeNoteRequest)
+	if err != nil {
+		panic(err)
+	}
+	request, _ := http.NewRequest("PUT", MagentoBaseRestApi+"V1/orderManagement/orderId/"+orderId+"/updateStoreNote", bytes.NewBuffer(storeNoteRequestJson))
+	request.Header.Set("Authorization", "Bearer "+MagentoBearer)
+	request.Header.Set("Content-Type", "application/json; charset=utf-8")
+	client := &http.Client{}
+	response, err := client.Do(request)
+	res := StoreNote{}
+	if err != nil {
+		fmt.Printf("The http request failed")
+	} else {
+		data, _ := ioutil.ReadAll(response.Body)
+		json.Unmarshal([]byte(data), &res)
+		fmt.Printf("data: %v", res)
+	}
+	return res
+}
 
 func getListOrder(currentMonth string) responseOrder {
 	err := godotenv.Load()
@@ -102,10 +155,8 @@ func getListOrder(currentMonth string) responseOrder {
 
 	res := responseOrder{}
 
-	//currentMonth := time.Now().Format("2006-01")
-
 	condition := "searchCriteria[filter_groups][0][filters][0][field]=created_at&searchCriteria[filter_groups][0][filters][0][value]=" + currentMonth + "-01%2000:00:00&searchCriteria[filter_groups][0][filters][0][condition_type]=from&searchCriteria[filter_groups][1][filters][1][field]=created_at&searchCriteria[filter_groups][1][filters][1][value]=" + currentMonth + "-31%2023:59:59&searchCriteria[filter_groups][1][filters][1][condition_type]=to"
-	//fmt.Printf(MagentoBaseRestApi + "V1/orders?" + condition)
+	// fmt.Printf(MagentoBaseRestApi + "V1/orders?" + condition)
 	request, _ := http.NewRequest("GET", MagentoBaseRestApi+"V1/orders?"+condition, nil)
 	request.Header.Set("Authorization", "Bearer "+MagentoBearer)
 	client := &http.Client{}
@@ -116,6 +167,7 @@ func getListOrder(currentMonth string) responseOrder {
 		data, _ := ioutil.ReadAll(response.Body)
 		json.Unmarshal([]byte(data), &res)
 	}
+	// fmt.Printf("result get list order: %v", res)
 	return res
 }
 
@@ -137,7 +189,6 @@ func getProduct(sku string) product {
 		fmt.Printf("The http request failed")
 	} else {
 		data, _ := ioutil.ReadAll(response.Body)
-
 		json.Unmarshal([]byte(data), &res)
 	}
 
@@ -151,21 +202,75 @@ func getProduct(sku string) product {
 
 	return res
 }
+func getAllStoreNote(srv *sheets.Service, spreadsheetId string, currentMonth string, dataRange string) ([]string, []StoreNote) {
+	var listStoreNote []StoreNote
+	var listHash []string
+	//Do get
+	readRange := currentMonth + dataRange
+	resp, err := srv.Spreadsheets.Values.Get(spreadsheetId, readRange).Do()
+	if err != nil {
+		log.Fatalf("Unable to retrieve data from sheet: %v", err)
+	}
+	if len(resp.Values) == 0 {
+		fmt.Println("No data found.")
+	} else {
+		for _, row := range resp.Values {
 
+			var hash string
+			if len(row) >= 1 {
+				hash = fmt.Sprintf("%v", row[0])
+			}
+			listHash = append(listHash, hash)
+
+			var status string
+			if len(row) > 2 {
+				status = fmt.Sprintf("%v", row[2])
+			}
+
+			var note string
+			if len(row) > 3 {
+				note = fmt.Sprintf("%v", row[3])
+			}
+
+			var erplyInvoiceIds string
+			if len(row) > 4 {
+				erplyInvoiceIds = fmt.Sprintf("%v", row[4])
+			}
+
+			listStoreNote = append(listStoreNote, StoreNote{Note: note, Status: status, ErplyInvoiceIds: erplyInvoiceIds})
+		}
+	}
+	return listHash, listStoreNote
+}
+
+func getHash(currentHash string, storeNote StoreNote) (bool, string) {
+	hashtring := storeNote.Status + storeNote.Note + storeNote.ErplyInvoiceIds
+	hasher := md5.New()
+	hasher.Write([]byte(hashtring))
+	hashStoreUpdateString := hex.EncodeToString(hasher.Sum(nil))
+	fmt.Printf("New Hash %v", hashStoreUpdateString)
+	fmt.Printf("Compare:::%v", currentHash != hashStoreUpdateString)
+	return currentHash != hashStoreUpdateString, hashStoreUpdateString
+}
 func main() {
-
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env.bak file")
 	}
 	spreadsheetId := os.Getenv("GOOGLE_SHEET_ID")
+	storeNoteDataRange := os.Getenv("STORE_NOTE_DATA_RANGE")
 
 	srv, err := spreadsheet.NewService()
 	if err != nil {
 		log.Fatalf("Unable to retrieve Sheets client: %v", err)
 	}
+
 	currentMonth := time.Now().Format("2006-01")
-	//	currentMonth = "2019-02"
+	//currentMonth = "2019-10"
+	listHash, allStoreNotes := getAllStoreNote(srv, spreadsheetId, currentMonth, storeNoteDataRange)
+	fmt.Printf("TOtoal store note:%v", len(allStoreNotes))
+	// updateStoreNote("5842")
+	// return
 
 	existedSheet := spreadsheet.CheckExistSheet(spreadsheetId, currentMonth)
 	if !existedSheet {
@@ -174,6 +279,7 @@ func main() {
 	var vr sheets.ValueRange
 	vr.Values = append(vr.Values, []interface{}{
 		"Order Date (time zone GST)",
+		"Order ID",
 		"Order number",
 		"Status",
 		"First Name",
@@ -193,6 +299,8 @@ func main() {
 		"Payment Transaction ID",
 		"Payment method",
 		"Gift Message",
+		"Fulfillment Status",
+		"Stock Checking",
 	})
 
 	res := getListOrder(currentMonth)
@@ -242,8 +350,23 @@ func main() {
 				giftInfo += "To: " + giftMessage.Recipient + "\n"
 				giftInfo += "Message: " + giftMessage.Message + "\n"
 			}
+
+			fmt.Printf("Update New Store i:%v", i)
+			//Check i exist key in allStoreNotes
+			var newHash string
+			var hasNewStoreUpdate bool
+			if len(allStoreNotes) > i {
+				hasNewStoreUpdate, newHash = getHash(listHash[i], allStoreNotes[i])
+				if hasNewStoreUpdate {
+					fmt.Printf("Update New Store Update")
+					//Do update store note
+					updateStoreNote(strconv.FormatInt(int64(item.EntityId), 10), allStoreNotes[i].Note, allStoreNotes[i].Status, allStoreNotes[i].ErplyInvoiceIds)
+				}
+			}
+
 			row := []interface{}{
 				item.CreatedAt,
+				item.EntityId,
 				item.IncrementId,
 				item.Status,
 				item.CustomerFirstName,
@@ -263,10 +386,14 @@ func main() {
 				item.Payment.TransactionId,
 				item.Payment.Method,
 				giftInfo,
+				item.ExtensionAttributes.FulfillmentStatus,
+				item.ExtensionAttributes.StockChecking,
+				newHash,
 			}
 			vr.Values = append(vr.Values, row)
 		}
 	}
+
 	_, err = srv.Spreadsheets.Values.Update(spreadsheetId, currentMonth+"!A1", &vr).ValueInputOption("RAW").Do()
 	if err != nil {
 		log.Fatalf("Unable to retrieve data from sheet. %v", err)
