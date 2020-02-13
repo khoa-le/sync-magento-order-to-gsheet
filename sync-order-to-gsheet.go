@@ -77,6 +77,7 @@ type order struct {
 	CustomerLastName    string              `json:"customer_lastname"`
 	CustomerEmail       string              `json:"customer_email"`
 	DiscountCode        string              `json:"coupon_code"`
+	ShippingDescription string              `json:"shipping_description"`
 	OrderItems          []orderItem         `json:"items"`
 	Payment             payment             `json:"payment"`
 	ExtensionAttributes extensionAttributes `json:"extension_attributes"`
@@ -217,24 +218,24 @@ func getAllStoreNote(srv *sheets.Service, spreadsheetId string, currentMonth str
 		for _, row := range resp.Values {
 
 			var hash string
-			if len(row) >= 1 {
+			if len(row) > 0 {
 				hash = fmt.Sprintf("%v", row[0])
 			}
 			listHash = append(listHash, hash)
 
 			var status string
-			if len(row) > 2 {
-				status = fmt.Sprintf("%v", row[2])
+			if len(row) > 1 {
+				status = fmt.Sprintf("%v", row[1])
 			}
 
 			var note string
-			if len(row) > 3 {
-				note = fmt.Sprintf("%v", row[3])
+			if len(row) > 2 {
+				note = fmt.Sprintf("%v", row[2])
 			}
 
 			var erplyInvoiceIds string
-			if len(row) > 4 {
-				erplyInvoiceIds = fmt.Sprintf("%v", row[4])
+			if len(row) > 3 {
+				erplyInvoiceIds = fmt.Sprintf("%v", row[3])
 			}
 
 			listStoreNote = append(listStoreNote, StoreNote{Note: note, Status: status, ErplyInvoiceIds: erplyInvoiceIds})
@@ -266,9 +267,7 @@ func main() {
 	}
 
 	currentMonth := time.Now().Format("2006-01")
-	//currentMonth = "2019-10"
-	listHash, allStoreNotes := getAllStoreNote(srv, spreadsheetId, currentMonth, storeNoteDataRange)
-	fmt.Printf("TOtoal store note:%v", len(allStoreNotes))
+	// currentMonth = "2019-12"
 	// updateStoreNote("5842")
 	// return
 
@@ -276,6 +275,10 @@ func main() {
 	if !existedSheet {
 		_ = spreadsheet.CreateNewSheet(spreadsheetId, currentMonth)
 	}
+
+	listHash, allStoreNotes := getAllStoreNote(srv, spreadsheetId, currentMonth, storeNoteDataRange)
+	fmt.Printf("TOtoal store note:%v", len(allStoreNotes))
+
 	var vr sheets.ValueRange
 	vr.Values = append(vr.Values, []interface{}{
 		"Order Date (time zone GST)",
@@ -325,15 +328,12 @@ func main() {
 				}
 			}
 			address := ""
-			shippingMethod := ""
 			if len(item.ExtensionAttributes.ShippingAssignments) > 0 {
 				shipping := item.ExtensionAttributes.ShippingAssignments[0].Shipping
 
 				if shipping.Method == "smilestoredelivery_smilestoredelivery" {
-					shippingMethod = "Nhận Tại Cửa Hàng"
 					address = shipping.ShippingAddress.Company
 				} else {
-					shippingMethod = "Giao Hàng Tận Nơi"
 					address = strings.Join(shipping.ShippingAddress.Street, ", ")
 					address += ", " + shipping.ShippingAddress.City + ", " + shipping.ShippingAddress.Region + " (Phone: " + shipping.ShippingAddress.Telephone + ")"
 				}
@@ -377,7 +377,7 @@ func main() {
 				strings.Join(quantities, ","),
 				strings.Join(prices, ","),
 				billingAddress,
-				shippingMethod,
+				item.ShippingDescription,
 				address,
 				item.DiscountCode,
 				item.GrandTotal,
